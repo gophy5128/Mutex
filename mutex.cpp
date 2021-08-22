@@ -4,38 +4,39 @@
 #include <unistd.h>
 #include <vector>
 #include<time.h>
-#include<stdlib.h>
+#include <stdlib.h>
 #include <sys/wait.h>
 
 #define BufferSize 1000
-
+typedef struct trans{
+    time_t time;
+    int info;
+}trans;
+typedef struct RWZONE{
+    trans* arr[1000];
+    int wnext = 0;
+}RWZONE;
 typedef struct Data{
     int id;
-    int seconds;
-    int status;
-    int data;
+    int next;
+    pthread_mutex_t mutex;
+    trans* data;
     RWZONE* buffer;
 }Data;
-typedef struct RWZONE{
-    int arr[1000];
-    int wnext;
-    int rnext;
-    int status;
-}RWZONE;
+
 
 void ProducerFunction(void* arg){
     Data* write = (Data*)arg;
     int s = (rand()%10+1)*100000;
     while(true){
         usleep(s);
-        while(write->buffer->status != write->id){
-            if(write->buffer->status == 0&&write->buffer->wnext-write->buffer->rnext<1000)write->buffer->status = write->id;
-        }
-        write->seconds = time((time_t*)NULL);
-        write->data = (rand() %10);
-        printf("Producer %d write data: time is %d, data is %d", write->id, write->seconds. write->data);//write->id,not *write->id
+        write->data->info = (rand() %10);
+        write->data->time = time(0);
+        pthread_mutex_lock(&write->mutex);
         write->buffer->arr[write->buffer->wnext]= write->data;
         write->buffer->wnext++;
+        pthread_mutex_unlock(&write->mutex);
+        printf("Producer %d write data: time is %lld, data is %d", write->id, (long long)write->data->time, write->data->info);//write->id,not *write->id
     }
 }
 
@@ -44,39 +45,43 @@ void CustomerFunction(void* arg){
     Data* reader = (Data*)arg;
     int s = (rand()%10+1)*100000;
     while(true){
-        usleep(s);
-        while(reader->buffer->status != -reader->id){
-            if(reader->buffer->status == 0&&reader->buffer->rnext<=reader->buffer->wnext)reader->buffer->status = -reader->id;
-        }
-        while(reader->buffer->rnext == reader->buffer->wnext);
-        printf("Customer %d reads data: time is %d, data is %d\n",reader->id,s,reader->buffer->arr[reader->buffer->rnext]);
-        reader->buffer->rnext ++;
-        reader->buffer->status = 0;
+        usleep(s);///  ///
+        printf("Customer %d reads data: time is %d, data is %d\n",reader->id,(int)reader->buffer->arr[reader->next]->time,reader->buffer->arr[reader->next]->info);
+        reader->next++;
     }
 }
 
-int main()
-{
-    RWZONE* buffer;
+int main(){
+    pthread_mutex_t wmutex = PTHREAD_MUTEX_INITIALIZER;
+    RWZONE* buffer = (RWZONE*)malloc(sizeof(RWZONE));
     buffer->wnext = 0;
-    buffer->rnext = 0;
-    buffer->status = -99;
-    for(int i=0; i<2; i++)
-    {
-        Data* producer = new Data;
+    int threadids[5];
+    for(int i=0; i<2; i++){
+        Data* producer = (Data*)malloc(sizeof(Data));
         producer->id = i+1;
+        producer->mutex = wmutex;
         producer->buffer = buffer;
+        producer->data = (trans*)malloc(sizeof(trans));
         pthread_t t;
-        pthread_create(&t, NULL, ProduceFunction, (void*) producer);
-        pthread_join(t, NULL);
+        pthread_create(&t, NULL, (void*)ProducerFunction, (void*) producer);
+        threadids[i] = t;
     }
-    for(int i=0; i<3; i++)
-    {
-        Data* customer = new Data;
+    for(int i=0; i<3; i++){
+        Data* customer = (Data*)malloc(sizeof(Data));
         customer->id = i+1;
+        customer->next = 0;
         customer->buffer = buffer;
         pthread_t t;
-        pthread_create(&t, NULL, CustomerFunction, (void*) customer);
-        pthread_join(t, NULL);
+        pthread_create(&t, NULL, (void*)CustomerFunction, (void*) customer);
+        threadids[i+2] = t;
+    }
+    for(int i =0;i<5;i++){
+        pthread_join(threadids[i],nullptr);
     }
 }
+
+/*changes:
+    1. change to mutex
+    2. change buffer(int)into struct
+*/
+
